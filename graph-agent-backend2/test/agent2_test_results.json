@@ -1,0 +1,22 @@
+[
+  {
+    "success": true,
+    "question": "数据库中总共有多少个顶点？",
+    "answer": "数据库中总共有 100 个顶点。"
+  },
+  {
+    "success": true,
+    "question": "找出所有在 Tech 行业工作的公司。",
+    "answer": "在 Tech 行业工作的公司共有 13 家，它们分别是：  \n- Company_1  \n- Company_3  \n- Company_5  \n- Company_6  \n- Company_7  \n- Company_8  \n- Company_9  \n- Company_10  \n- Company_12  \n- Company_13  \n- Company_16  \n- Company_17  \n- Company_18"
+  },
+  {
+    "success": true,
+    "question": "Person_0 在哪个公司工作？",
+    "answer": "Person_0 在 Company_13 公司工作。"
+  },
+  {
+    "success": true,
+    "question": "找出所有住在 City_5 的人。",
+    "answer": "住在 City_5 的人是 Person_17。"
+  }
+]

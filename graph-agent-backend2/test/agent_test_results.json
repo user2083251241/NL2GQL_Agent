@@ -1,0 +1,38 @@
+[
+  {
+    "success": false,
+    "question": "数据库中总共有多少个顶点？",
+    "gremlin": null,
+    "result": null,
+    "explanation": "处理失败: cannot unpack non-iterable NoneType object",
+    "retries": 2,
+    "error": "cannot unpack non-iterable NoneType object"
+  },
+  {
+    "success": false,
+    "question": "找出所有在 Tech 行业工作的公司。",
+    "gremlin": null,
+    "result": null,
+    "explanation": "处理失败: cannot unpack non-iterable NoneType object",
+    "retries": 2,
+    "error": "cannot unpack non-iterable NoneType object"
+  },
+  {
+    "success": false,
+    "question": "Person_0 在哪个公司工作？",
+    "gremlin": null,
+    "result": null,
+    "explanation": "处理失败: cannot unpack non-iterable NoneType object",
+    "retries": 2,
+    "error": "cannot unpack non-iterable NoneType object"
+  },
+  {
+    "success": false,
+    "question": "找出所有住在 City_5 的人。",
+    "gremlin": null,
+    "result": null,
+    "explanation": "处理失败: cannot unpack non-iterable NoneType object",
+    "retries": 2,
+    "error": "cannot unpack non-iterable NoneType object"
+  }
+]
