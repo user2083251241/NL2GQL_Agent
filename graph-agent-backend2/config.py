@@ -11,10 +11,18 @@ class Config:
     HUGEGRAPH_HOST = os.getenv("HUGEGRAPH_HOST", "127.0.0.1")
     HUGEGRAPH_PORT = int(os.getenv("HUGEGRAPH_PORT", 8080))
     HUGEGRAPH_USER = os.getenv("HUGEGRAPH_USER", "admin")
-    HUGEGRAPH_PWD = os.getenv("HUGEGRAPH_PWD", "admin")
+    HUGEGRAPH_PWD = os.getenv("HUGEGRAPH_PWD", "")
     HUGEGRAPH_GRAPH = os.getenv("HUGEGRAPH_GRAPH", "hugegraph")
     # 可选：HugeGraph 1.5+ 支持 GraphSpace，默认留空
     HUGEGRAPH_GRAPHSPACE = os.getenv("HUGEGRAPH_GRAPHSPACE", None)
+
+    # ========== MySQL 数据库配置 ==========
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+    MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "graph_agent_db")
+    MYSQL_CHARSET = os.getenv("MYSQL_CHARSET", "utf8mb4")
     
     # ========== LLM 配置（以 OpenAI 为例） ==========
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
