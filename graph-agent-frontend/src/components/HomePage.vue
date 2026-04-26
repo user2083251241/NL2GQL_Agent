@@ -1,7 +1,7 @@
 <template>
   <div class="home-page">
     <div class="card">
-      <h2 class="title">✨ Graph Agent 交互演示</h2>
+      <h2 class="title">HugeGraph查询智能体</h2>
 
       <!-- 文本输入框 -->
       <textarea
@@ -31,8 +31,23 @@
         </button>
       </div>
 
+      <!-- 错误提示区域 -->
+      <div class="error-area" v-if="errorMessage">
+        <div class="error-message">
+          ❌ {{ errorMessage }}
+        </div>
+      </div>
+
+      <!-- Agent 回答区域 -->
+      <div class="answer-area" v-if="agentAnswer">
+        <div class="answer-content">
+          <div class="answer-title">🤖 Agent 回答：</div>
+          <div class="answer-text">{{ agentAnswer }}</div>
+        </div>
+      </div>
+
       <!-- 反馈区域：显示最近提交的内容 -->
-      <div class="feedback-area" v-if="lastSubmitted">
+      <div class="feedback-area" v-if="lastSubmitted && !errorMessage && !agentAnswer">
         <div class="feedback-success">
           ✅ 提交成功！<br />
           <span class="submitted-text">“{{ lastSubmitted }}”</span>
@@ -44,11 +59,14 @@
 
 <script setup>
 import { ref } from 'vue'
+import { graphAgentApi } from '@/api/index'
 
 // 响应式数据
 const userInput = ref('')        // 输入框内容
 const isSubmitting = ref(false)  // 提交状态
 const lastSubmitted = ref('')    // 最后一次提交的内容
+const errorMessage = ref('')     // 错误消息
+const agentAnswer = ref('')      // Agent的回答
 
 // 提交处理
 const handleSubmit = async () => {
@@ -59,25 +77,49 @@ const handleSubmit = async () => {
   }
   if (isSubmitting.value) return
 
+  // 重置状态
   isSubmitting.value = true
+  errorMessage.value = ''
+  lastSubmitted.value = ''
+  agentAnswer.value = ''
 
-  // 模拟异步提交（如调用后端 API）
-  await new Promise(resolve => setTimeout(resolve, 500))
+  try {
+    // 发送真实的网络请求
+    const response = await graphAgentApi.submitQuery(trimmed)
+    
+    // 验证响应格式
+    if (!response.success) {
+      throw new Error(response.message || '请求失败')
+    }
+    
+    // 更新反馈和答案
+    lastSubmitted.value = response.question
+    agentAnswer.value = response.answer
+    console.log('[HomePage] 用户提问:', response.question)
+    console.log('[HomePage] Agent回答:', response.answer)
 
-  // 更新反馈
-  lastSubmitted.value = trimmed
-  console.log('[HomePage] 用户提交:', trimmed)
-
-  // 可选：提交后清空输入框（若需要保留，注释下面一行）
-  // userInput.value = ''
-
-  isSubmitting.value = false
+    // 可选：提交后清空输入框（若需要保留，注释下面一行）
+    // userInput.value = ''
+  } catch (error) {
+    // 处理错误
+    console.error('[HomePage] 提交失败:', error)
+    errorMessage.value = error.response?.data?.message || error.message || '网络请求失败，请稍后重试'
+    
+    // 显示错误提示5秒后自动清除
+    setTimeout(() => {
+      errorMessage.value = ''
+    }, 5000)
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 // 清空输入框及反馈
 const clearInput = () => {
   userInput.value = ''
   lastSubmitted.value = ''
+  errorMessage.value = ''
+  agentAnswer.value = ''
 }
 </script>
 
@@ -109,7 +151,7 @@ const clearInput = () => {
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  border-left: 4px solid #3b82f6;
+  /*border-left: 4px solid #3b82f6;*/
   padding-left: 1rem;
 }
 
@@ -143,7 +185,7 @@ const clearInput = () => {
   padding: 0.6rem 1rem;
   border-radius: 1rem;
   margin-bottom: 1.5rem;
-  border-left: 3px solid #3b82f6;
+  /*border-left: 3px solid #3b82f6;*/
   line-height: 1.4;
 }
 
@@ -205,6 +247,45 @@ const clearInput = () => {
 .clear-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.error-area {
+  margin-bottom: 1.8rem;
+}
+
+.error-message {
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 1rem;
+  padding: 1rem;
+  border-left: 4px solid #ef4444;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.answer-area {
+  margin-bottom: 1.8rem;
+}
+
+.answer-content {
+  background: #f8fafc;
+  border-radius: 1rem;
+  padding: 1.2rem;
+  border-left: 4px solid #3b82f6;
+}
+
+.answer-title {
+  font-weight: 600;
+  color: #1e40af;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.answer-text {
+  color: #1e293b;
+  line-height: 1.6;
+  font-size: 1rem;
+  white-space: pre-wrap;
 }
 
 .feedback-area {
