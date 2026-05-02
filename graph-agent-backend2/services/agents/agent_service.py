@@ -8,7 +8,7 @@
 4. 返回格式化的查询结果
 """
 from typing import Dict, Any, Optional
-from .agent2 import SimpleGraphAgent
+from .agent2 import GraphAgent
 from modules.database.client import get_db
 from modules.llm.client import get_llm
 
@@ -52,7 +52,7 @@ class AgentQueryService:
             db = get_db()
             
             # 创建Agent实例
-            self._agent = SimpleGraphAgent(llm=llm, db=db)
+            self._agent = GraphAgent(llm=llm, db=db)
             
         except Exception as e:
             print(f"❌ Agent初始化失败: {e}")

@@ -1,14 +1,15 @@
 """
 图查询智能体 (Graph Query Agent)
 基于LangChain ReAct模式实现自然语言到Gremlin的转换和执行
+注意：该模块已被弃用！
 """
 from typing import Dict, Any, Optional
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from modules.database.client import HugeGraphDB
 from modules.llm.client import ChatOpenAI
-from .tools import create_tools
-from .prompts import (
+from ..services.agents.tools import create_tools
+from ..services.agents.prompts import (
     get_system_prompt,
     create_text_to_gremlin_prompt,
     create_result_explanation_prompt,

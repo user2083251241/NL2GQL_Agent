@@ -1,8 +1,7 @@
 """
 Agents子包 - AI智能体业务逻辑
 """
-from .agent import GraphQueryAgent
-from .agent2 import SimpleGraphAgent
+from .agent2 import GraphAgent
 from .agent_service import AgentQueryService, get_agent_service
 from .tools import create_tools, ExecuteGremlinTool, GetSchemaTool
 from .prompts import (
@@ -13,8 +12,7 @@ from .prompts import (
 )
 
 __all__ = [
-    "GraphQueryAgent",
-    "SimpleGraphAgent",
+    "GraphAgent",
     "AgentQueryService",
     "get_agent_service",
     "create_tools",

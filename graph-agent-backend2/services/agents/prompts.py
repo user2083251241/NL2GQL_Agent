@@ -2,7 +2,7 @@
 Prompt模板管理
 定义Agent使用的各种Prompt模板
 """
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 
 
 # ==================== 系统提示词 ====================
@@ -11,15 +11,31 @@ SYSTEM_PROMPT = """你是一个专业的图数据库查询助手，专门帮助�
 
 你的核心能力：
 1. 理解用户对图数据库的自然语言查询需求
-2. 根据提供的Schema信息生成准确的Gremlin查询
+2. 根据数据库Schema信息生成准确的Gremlin查询
 3. 解释查询结果并用自然语言回答用户问题
 4. 在查询失败时分析错误并自我修正
 
 你必须遵循的规则：
-- 只使用提供的Schema中的顶点标签、边标签和属性
+- 只使用数据库Schema中的顶点标签、边标签和属性
 - 生成的Gremlin语法必须符合HugeGraph规范
+- 如果不确定数据库结构，先调用get_schema_info工具获取Schema信息
 - 如果用户问题无法转换为查询，明确说明原因
-- 保持回答简洁、准确、专业"""
+- 保持回答简洁、准确、专业
+
+你可以使用以下工具来帮助用户查询图数据库：
+
+{tools}
+
+工具名称列表: {tool_names}
+
+请按照以下格式回答：
+Thought: 我需要做什么
+Action: 工具名称 (必须是 {tool_names} 中的一个)
+Action Input: 工具输入
+Observation: 工具返回结果
+... (可以重复多次)
+Thought: 我现在知道答案了
+Final Answer: 最终答案"""
 
 
 # ==================== Text-to-Gremlin Prompt ====================
@@ -74,18 +90,26 @@ CORRECTION_TEMPLATE = """之前的Gremlin查询执行失败，需要修正。
 
 # ==================== 创建Prompt模板对象 ====================
 
+def create_react_agent_prompt():
+    """创建ReAct Agent的Prompt模板"""
+    return ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+        ("human", "{input}\n\n{agent_scratchpad}")
+    ])
+
+
 def create_text_to_gremlin_prompt():
-    """创建Text-to-Gremlin转换的Prompt模板"""
+    """创建Text-to-Gremlin转换的Prompt模板（向后兼容）"""
     return ChatPromptTemplate.from_template(TEXT_TO_GREMLIN_TEMPLATE)
 
 
 def create_result_explanation_prompt():
-    """创建结果解释的Prompt模板"""
+    """创建结果解释的Prompt模板（向后兼容）"""
     return ChatPromptTemplate.from_template(RESULT_EXPLANATION_TEMPLATE)
 
 
 def create_correction_prompt():
-    """创建自我修正的Prompt模板"""
+    """创建自我修正的Prompt模板（向后兼容）"""
     return ChatPromptTemplate.from_template(CORRECTION_TEMPLATE)
 
 

@@ -5,7 +5,7 @@ Agent模块测试脚本
 import sys
 from modules.llm.client import get_llm
 from modules.database.client import get_db
-from services.agents.agent import GraphQueryAgent
+from no_use.agent import GraphQueryAgent
 
 
 def test_agent_creation():

@@ -17,7 +17,7 @@ from .prompts import (
 警告：此模块已弃用，请使用以下新路径：
 - from services.agents.agent import GraphQueryAgent
 """
-from services.agents.agent import GraphQueryAgent
+from no_use.agent import GraphQueryAgent
 
 __all__ = [
     "GraphQueryAgent",

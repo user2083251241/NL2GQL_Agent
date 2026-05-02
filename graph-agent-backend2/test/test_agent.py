@@ -13,7 +13,7 @@ import json
 # 添加项目根目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.agents.agent import GraphQueryAgent
+from no_use.agent import GraphQueryAgent
 from modules.llm.client import get_llm
 from modules.database.client import get_db
 
