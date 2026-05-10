@@ -75,7 +75,8 @@ def handle_graph_agent_query():
     请求体:
     {
         "query": "用户输入的内容",
-        "timestamp": 当前时间戳
+        "timestamp": 当前时间戳,
+        "enable_self_correction": true/false (可选，默认为true)
     }
     
     响应:
@@ -97,9 +98,12 @@ def handle_graph_agent_query():
         
         user_query = data['query']
         timestamp = data.get('timestamp', None)
+        enable_self_correction = data.get('enable_self_correction', True)  # 默认启用
         
         # 2. 获取业务逻辑层服务实例（遵循分层架构原则）
-        agent_service = get_agent_service()
+        # 注意：由于是单例模式，第一次调用的参数会生效
+        # 在实际生产环境中，可能需要考虑每个请求独立的Agent实例
+        agent_service = get_agent_service(enable_self_correction=enable_self_correction)
         
         # 3. 执行业务逻辑（由业务层协调LLM和数据库）
         result = agent_service.query(user_query)

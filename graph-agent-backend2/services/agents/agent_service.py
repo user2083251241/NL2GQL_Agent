@@ -22,20 +22,28 @@ class AgentQueryService:
     
     _instance = None
     _agent = None
+    _enable_self_correction = True  # 默认启用自我修正
     
-    def __new__(cls):
+    def __new__(cls, enable_self_correction: bool = True):
         """单例模式实现"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
+            # 存储配置参数
+            cls._enable_self_correction = enable_self_correction
         return cls._instance
     
-    def __init__(self):
-        """初始化服务（仅执行一次）"""
+    def __init__(self, enable_self_correction: bool = True):
+        """初始化服务（仅执行一次）
+        
+        Args:
+            enable_self_correction: 是否启用自我修正功能，默认为True
+        """
         if self._initialized:
             return
         
         print("🔄 初始化AgentQueryService...")
+        self.enable_self_correction = self.__class__._enable_self_correction
         self._initialize_agent()
         self._initialized = True
         print("✅ AgentQueryService初始化完成")
@@ -51,8 +59,12 @@ class AgentQueryService:
             llm = get_llm()
             db = get_db()
             
-            # 创建Agent实例
-            self._agent = GraphAgent(llm=llm, db=db)
+            # 创建Agent实例，传递自我修正开关
+            self._agent = GraphAgent(
+                llm=llm, 
+                db=db, 
+                enable_self_correction=self.enable_self_correction
+            )
             
         except Exception as e:
             print(f"❌ Agent初始化失败: {e}")
@@ -124,6 +136,15 @@ class AgentQueryService:
 
 
 # 便捷函数：获取服务实例
-def get_agent_service() -> AgentQueryService:
-    """获取AgentQueryService单例实例"""
-    return AgentQueryService()
+def get_agent_service(enable_self_correction: bool = True) -> AgentQueryService:
+    """获取AgentQueryService单例实例
+    
+    Args:
+        enable_self_correction: 是否启用自我修正功能，默认为True
+        
+    Returns:
+        AgentQueryService实例
+    """
+    # 注意：由于是单例模式，第一次调用时的参数会生效
+    # 后续调用即使传入不同参数也不会改变已初始化的实例
+    return AgentQueryService(enable_self_correction=enable_self_correction)

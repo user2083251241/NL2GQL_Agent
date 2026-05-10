@@ -271,7 +271,7 @@ const clearInput = () => {
   background: #f8fafc;
   border-radius: 1rem;
   padding: 1.2rem;
-  border-left: 4px solid #3b82f6;
+  /*border-left: 4px solid #3b82f6;*/
 }
 
 .answer-title {

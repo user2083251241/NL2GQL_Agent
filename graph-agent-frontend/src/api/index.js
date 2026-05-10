@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  timeout: 30000, // 增加到30秒超时用于调试
   headers: {
     'Content-Type': 'application/json'
   }
@@ -30,10 +30,11 @@ api.interceptors.response.use(
 );
 
 export const graphAgentApi = {
-  submitQuery(query) {
+  submitQuery(query, enableSelfCorrection = true) {
     return api.post('/graph-agent/query', {
       query: query,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      enable_self_correction: enableSelfCorrection
     });
   }
 };
