@@ -1,0 +1,12 @@
+docker run -it --rm `
+  --name loader-movielens-small `
+  -v "D:\Code\graph-agent-project\graph-agent-backend2\ml-latest-small\hugegraph_data:/loader/dataset" `
+  hugegraph/loader:1.5.0 `
+  bin/hugegraph-loader.sh `
+  -g hugegraph `
+  -f /loader/dataset/struct.json `
+  -s /loader/dataset/schema.groovy `
+  -h host.docker.internal `
+  -p 8080 `
+  --batch-size 1000 `
+  --print-progress true

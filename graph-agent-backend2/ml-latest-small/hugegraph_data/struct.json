@@ -1,0 +1,293 @@
+{
+  "version": "2.0",
+  "structs": [
+    {
+      "id": "1",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/vertex_user.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "userId"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [
+        {
+          "label": "User",
+          "skip": false,
+          "id": null,
+          "unfold": false,
+          "field_mapping": {},
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ],
+      "edges": []
+    },
+    {
+      "id": "2",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/vertex_movie.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "movieId",
+          "title",
+          "imdbId",
+          "tmdbId"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [
+        {
+          "label": "Movie",
+          "skip": false,
+          "id": null,
+          "unfold": false,
+          "field_mapping": {},
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ],
+      "edges": []
+    },
+    {
+      "id": "3",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/vertex_genre.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "name"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [
+        {
+          "label": "Genre",
+          "skip": false,
+          "id": null,
+          "unfold": false,
+          "field_mapping": {},
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ],
+      "edges": []
+    },
+    {
+      "id": "4",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/edge_rating.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "userId",
+          "movieId",
+          "rating",
+          "timestamp"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [],
+      "edges": [
+        {
+          "label": "rated",
+          "skip": false,
+          "source": [
+            "userId"
+          ],
+          "unfold_source": false,
+          "target": [
+            "movieId"
+          ],
+          "unfold_target": false,
+          "field_mapping": {},
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/edge_tag.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "userId",
+          "movieId",
+          "tag",
+          "timestamp"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [],
+      "edges": [
+        {
+          "label": "tagged",
+          "skip": false,
+          "source": [
+            "userId"
+          ],
+          "unfold_source": false,
+          "target": [
+            "movieId"
+          ],
+          "unfold_target": false,
+          "field_mapping": {},
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "skip": false,
+      "input": {
+        "type": "FILE",
+        "path": "/loader/dataset/edge_genre.csv",
+        "file_filter": {
+          "extensions": [
+            "*"
+          ]
+        },
+        "format": "CSV",
+        "delimiter": ",",
+        "date_format": "yyyy-MM-dd HH:mm:ss",
+        "time_zone": "GMT+8",
+        "skipped_line": {
+          "regex": "(^#|^//).*|"
+        },
+        "compression": "NONE",
+        "header": [
+          "movieId",
+          "genre"
+        ],
+        "charset": "UTF-8",
+        "list_format": null
+      },
+      "vertices": [],
+      "edges": [
+        {
+          "label": "belongsTo",
+          "skip": false,
+          "source": [
+            "movieId"
+          ],
+          "unfold_source": false,
+          "target": [
+            "genre"
+          ],
+          "unfold_target": false,
+          "field_mapping": {
+            "genre": "name"
+          },
+          "value_mapping": {},
+          "selected": [],
+          "ignored": [],
+          "null_values": [
+            ""
+          ],
+          "update_strategies": {}
+        }
+      ]
+    }
+  ]
+}

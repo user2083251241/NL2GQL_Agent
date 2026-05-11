@@ -1,0 +1,84 @@
+{
+  "vertices": [
+    {
+      "label": "User",
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/vertex_user.csv",
+        "format": "CSV",
+        "header": ["userId"],
+        "charset": "UTF-8"
+      }
+    },
+    {
+      "label": "Movie",
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/vertex_movie.csv",
+        "format": "CSV",
+        "header": ["movieId", "title", "imdbId", "tmdbId"],
+        "charset": "UTF-8"
+      }
+    },
+    {
+      "label": "Genre",
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/vertex_genre.csv",
+        "format": "CSV",
+        "header": ["name"],
+        "charset": "UTF-8"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "label": "rated",
+      "source": ["userId"],
+      "target": ["movieId"],
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/edge_rating.csv",
+        "format": "CSV",
+        "header": ["userId", "movieId", "rating", "timestamp"],
+        "charset": "UTF-8"
+      },
+      "field_mapping": {
+        "userId": "userId",
+        "movieId": "movieId"
+      }
+    },
+    {
+      "label": "tagged",
+      "source": ["userId"],
+      "target": ["movieId"],
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/edge_tag.csv",
+        "format": "CSV",
+        "header": ["userId", "movieId", "tag", "timestamp"],
+        "charset": "UTF-8"
+      },
+      "field_mapping": {
+        "userId": "userId",
+        "movieId": "movieId"
+      }
+    },
+    {
+      "label": "belongsTo",
+      "source": ["movieId"],
+      "target": ["genre"],
+      "input": {
+        "type": "file",
+        "path": "hugegraph_data/edge_genre.csv",
+        "format": "CSV",
+        "header": ["movieId", "genre"],
+        "charset": "UTF-8"
+      },
+      "field_mapping": {
+        "movieId": "movieId",
+        "genre": "name"
+      }
+    }
+  ]
+}
