@@ -1,0 +1,62 @@
+{
+  "vertices": {
+    "User": {
+      "description": "用户",
+      "properties": {
+        "userId": "用户ID"
+      }
+    },
+    "Movie": {
+      "description": "电影",
+      "properties": {
+        "movieId": "电影ID",
+        "title": "电影标题",
+        "imdbId": "IMDb标识符",
+        "tmdbId": "TMDB标识符"
+      }
+    },
+    "Genre": {
+      "description": "电影类型",
+      "properties": {
+        "name": "类型名称"
+      }
+    }
+  },
+  "edges": {
+    "rated": {
+      "description": "用户评分",
+      "source": "User",
+      "target": "Movie",
+      "properties": {
+        "rating": "评分 (0.5-5.0星)",
+        "timestamp": "评分时间"
+      }
+    },
+    "tagged": {
+      "description": "用户标记",
+      "source": "User",
+      "target": "Movie",
+      "properties": {
+        "tag": "标签内容",
+        "timestamp": "标记时间"
+      }
+    },
+    "belongsTo": {
+      "description": "电影分类",
+      "source": "Movie",
+      "target": "Genre",
+      "properties": {}
+    }
+  },
+  "field_mapping": {
+    "userId": "用户ID",
+    "movieId": "电影ID", 
+    "title": "电影标题",
+    "imdbId": "IMDb ID",
+    "tmdbId": "TMDB ID",
+    "name": "类型名称",
+    "rating": "评分",
+    "timestamp": "时间戳",
+    "tag": "标签"
+  }
+}

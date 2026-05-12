@@ -2,12 +2,90 @@
 自定义Tools定义
 为Agent提供执行Gremlin查询和获取Schema的能力
 """
+import json
+import os
 from langchain.tools import BaseTool
 from typing import Type, Optional
 from pydantic import BaseModel, Field
 from modules.database.client import HugeGraphDB
 from langchain_core.prompts import ChatPromptTemplate
 from modules.llm.client import get_llm
+
+
+# ==================== Schema映射表加载函数 ====================
+
+def load_schema_mapping() -> dict:
+    """
+    加载schema映射表，提供英文标签到中文语义的映射
+    
+    Returns:
+        包含映射关系的字典
+    """
+    try:
+        mapping_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'mapping', 'schema_mapping.json')
+        if os.path.exists(mapping_path):
+            with open(mapping_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            print(f"⚠️ Schema映射表未找到: {mapping_path}")
+            return {}
+    except Exception as e:
+        print(f"⚠️ 加载schema映射表失败: {e}")
+        return {}
+
+
+def enhance_schema_with_mapping(schema_info: str, mapping: dict) -> str:
+    """
+    使用映射表增强schema信息，添加中文语义说明
+    
+    Args:
+        schema_info: 原始schema信息字符串
+        mapping: schema映射字典
+        
+    Returns:
+        增强后的schema信息字符串
+    """
+    if not mapping:
+        return schema_info
+    
+    enhanced_parts = []
+    lines = schema_info.split('\n')
+    
+    for line in lines:
+        enhanced_line = line
+        
+        # 处理顶点标签行
+        if line.strip().startswith('- ') and '(属性:' in line:
+            # 提取顶点标签名
+            label_part = line.split('(属性:')[0].strip()
+            if label_part.startswith('- '):
+                label_name = label_part[2:]  # 移除 "- "
+                # 查找中文描述
+                if label_name in mapping.get('vertices', {}):
+                    chinese_desc = mapping['vertices'][label_name]['description']
+                    enhanced_line = f"{line} [中文: {chinese_desc}]"
+        
+        elif line.strip().startswith('- ') and '(属性:' not in line and not line.strip().endswith('(无)'):
+            # 处理无属性的顶点或边标签
+            label_part = line.strip()[2:]  # 移除 "- "
+            # 检查是否是顶点标签
+            if label_part in mapping.get('vertices', {}):
+                chinese_desc = mapping['vertices'][label_part]['description']
+                enhanced_line = f"{line} [中文: {chinese_desc}]"
+            # 检查是否是边标签
+            elif label_part in mapping.get('edges', {}):
+                chinese_desc = mapping['edges'][label_part]['description']
+                enhanced_line = f"{line} [中文: {chinese_desc}]"
+        
+        enhanced_parts.append(enhanced_line)
+    
+    # 添加字段映射速查表
+    if mapping and 'field_mapping' in mapping:
+        enhanced_parts.append("\n📋 字段中文映射速查:")
+        for field, chinese_meaning in mapping['field_mapping'].items():
+            enhanced_parts.append(f"  - {field}: {chinese_meaning}")
+    
+    return '\n'.join(enhanced_parts)
 
 
 # ==================== Tool输入模型 ====================
@@ -110,12 +188,14 @@ class GetSchemaTool(BaseTool):
     - 获取所有顶点标签、边标签和属性定义
     - 帮助Agent理解数据库结构
     - 用于模式链接（Schema Linking）
+    - 集成中文语义映射增强理解能力
     """
     
     name: str = "get_schema_info"
     description: str = (
         "获取HugeGraph图数据库的完整Schema信息，"
-        "包括所有顶点标签、边标签和它们的属性定义。"
+        "包括所有顶点标签、边标签和它们的属性定义，"
+        "并提供中文语义映射帮助理解数据含义。"
         "在生成Gremlin查询前，应该先调用此工具了解数据库结构。"
     )
     args_schema: Type[BaseModel] = GetSchemaInput
@@ -127,10 +207,10 @@ class GetSchemaTool(BaseTool):
     
     def _run(self, dummy: str = "") -> str:
         """
-        获取Schema信息
+        获取Schema信息并增强中文语义
         
         Returns:
-            格式化的Schema信息字符串
+            格式化的Schema信息字符串（包含中文映射）
         """
         try:
             # 获取Schema
@@ -167,7 +247,14 @@ class GetSchemaTool(BaseTool):
             else:
                 output_parts.append("  (无)")
             
-            return "\n".join(output_parts)
+            # 基础schema信息
+            basic_schema_info = "\n".join(output_parts)
+            
+            # 加载映射表并增强信息
+            mapping = load_schema_mapping()
+            enhanced_schema_info = enhance_schema_with_mapping(basic_schema_info, mapping)
+            
+            return enhanced_schema_info
             
         except Exception as e:
             return f"❌ 获取Schema异常: {str(e)}"
