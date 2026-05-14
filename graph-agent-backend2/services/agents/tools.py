@@ -10,6 +10,110 @@ from pydantic import BaseModel, Field, validator
 from modules.database.client import HugeGraphDB
 from langchain_core.prompts import ChatPromptTemplate
 from modules.llm.client import get_llm
+from langchain_core.callbacks import BaseCallbackHandler
+import queue
+import threading
+
+
+# ==================== SSE流式回调处理器 ====================
+
+class StreamingCallbackHandler(BaseCallbackHandler):
+    """
+    流式回调处理器 - 捕获Agent执行过程中的所有输出
+    
+    用于SSE流式响应，实时推送Agent的思考过程到前端
+    """
+    
+    def __init__(self):
+        self.steps = []
+        self.current_step = None
+        self._queue = queue.Queue()
+        self._finished = False
+    
+    def on_agent_action(self, action, **kwargs):
+        """当Agent决定执行某个动作时触发"""
+        step = {
+            "type": "action",
+            "content": f"🔧 执行工具: {action.tool}\n参数: {action.tool_input}",
+            "timestamp": self._get_timestamp()
+        }
+        self.steps.append(step)
+        self._queue.put(step)  # 立即放入队列
+        print(f"\n{step['content']}")  # 同时输出到控制台
+    
+    def on_tool_end(self, output: str, **kwargs):
+        """当工具执行完成时触发"""
+        step = {
+            "type": "observation",
+            "content": f"📋 工具返回:\n{output[:500]}{'...' if len(output) > 500 else ''}",
+            "timestamp": self._get_timestamp()
+        }
+        self.steps.append(step)
+        self._queue.put(step)  # 立即放入队列
+        print(f"\n{step['content']}")  # 同时输出到控制台
+    
+    def on_agent_finish(self, finish, **kwargs):
+        """当Agent执行完成时触发"""
+        step = {
+            "type": "final_answer",
+            "content": finish.return_values.get("output", ""),
+            "timestamp": self._get_timestamp()
+        }
+        self.steps.append(step)
+        self._queue.put(step)  # 立即放入队列
+        print(f"\n✅ 最终答案:\n{step['content']}")  # 同时输出到控制台
+    
+    def on_chain_start(self, serialized, inputs, **kwargs):
+        """当链开始时触发"""
+        if 'input' in inputs:
+            step = {
+                "type": "thought",
+                "content": f"💭 思考中...",
+                "timestamp": self._get_timestamp()
+            }
+            self.steps.append(step)
+            self._queue.put(step)  # 立即放入队列
+            print(f"\n{step['content']}")  # 同时输出到控制台
+    
+    def on_text(self, text: str, **kwargs):
+        """当有文本输出时触发（LLM生成的中间内容）"""
+        if text.strip():
+            step = {
+                "type": "thought",
+                "content": text[:300],
+                "timestamp": self._get_timestamp()
+            }
+            self.steps.append(step)
+            self._queue.put(step)  # 立即放入队列
+            print(f"\n💬 LLM输出: {text[:200]}")  # 同时输出到控制台
+    
+    def on_chain_error(self, error, **kwargs):
+        """当链执行出错时触发"""
+        step = {
+            "type": "error",
+            "content": f"❌ 错误: {str(error)}",
+            "timestamp": self._get_timestamp()
+        }
+        self.steps.append(step)
+        self._queue.put(step)  # 立即放入队列
+        print(f"\n{step['content']}")  # 同时输出到控制台
+    
+    def mark_finished(self):
+        """标记处理完成"""
+        self._finished = True
+        self._queue.put(None)  # 发送结束信号
+    
+    def get_next_step(self, timeout=1.0):
+        """获取下一个步骤（阻塞等待）"""
+        try:
+            return self._queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+    
+    def _get_timestamp(self):
+        """获取当前时间戳"""
+        import time
+        return int(time.time())
 
 
 # ==================== Schema映射表加载函数 ====================

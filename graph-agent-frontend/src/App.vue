@@ -1,11 +1,11 @@
 <template>
   <div id="app">
-    <HomePage />
+    <HomePage_SSE />
   </div>
 </template>
 
 <script setup>
-import HomePage from './components/HomePage.vue'
+import HomePage_SSE from './components/HomePage_SSE.vue'
 </script>
 
 <style>

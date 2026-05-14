@@ -62,12 +62,12 @@
           </div>
         </div>
 
-        <!-- 加载中状态 -->
-        <div v-if="isSubmitting" class="message-item agent">
+        <!-- 加载中状态（流式请求时不再显示固定加载文案） -->
+        <div v-if="isSubmitting && !streamingMsgId" class="message-item agent">
           <div class="message-bubble">
             <div class="message-avatar"></div>
             <div class="message-content">
-              <div class="loading-text">正在思考中...</div>
+              <div class="loading-text">正在思考中...（前端）</div>
             </div>
           </div>
         </div>
@@ -116,13 +116,14 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { graphAgentApi } from '@/api/index'
 
 // 响应式数据
 const userInput = ref('')        
 const isSubmitting = ref(false)  
 const errorMessage = ref('')     
 const messagesRef = ref(null)    
+// 新增：流式消息ID（用于标记当前正在流式输出的Agent消息）
+const streamingMsgId = ref('')
 
 // 会话管理
 const sessions = ref([])
@@ -207,62 +208,142 @@ watch(currentMessages, () => {
   scrollToBottom()
 }, { deep: true })
 
-// 提交处理
+// 新增：更新流式消息内容
+const updateStreamingMessage = (content) => {
+  const currentSession = sessions.value.find(s => s.id === activeSessionId.value)
+  const msgIndex = currentSession.messages.findIndex(m => m.id === streamingMsgId.value)
+  if (msgIndex > -1) {
+    currentSession.messages[msgIndex].content = content
+    currentSession.lastActiveTime = new Date()
+  }
+}
+
+// 新增：关闭SSE连接
+const closeSSEConnection = (eventSource) => {
+  if (eventSource) {
+    eventSource.close()
+  }
+  isSubmitting.value = false
+  streamingMsgId.value = ''
+}
+
+// 提交按钮核心处理函数：发送用户问题，接收后端SSE流式响应
 const handleSubmit = async () => {
+  // 1. 校验输入框：去除首尾空格，判断是否为空
   const trimmed = userInput.value.trim()
   if (!trimmed) {
     alert('❌ 请输入有效内容后再提交')
     return
   }
+  // 防止重复提交：如果正在请求中，直接返回
   if (isSubmitting.value) return
 
+  // 2. 重置状态：开启加载状态，清空错误提示
   isSubmitting.value = true
   errorMessage.value = ''
+  streamingMsgId.value = ''
 
-  // 添加用户消息
+  // 3. 构造用户消息对象
   const userMsg = {
-    id: Date.now().toString(),
-    type: 'user',
-    content: trimmed,
-    timestamp: new Date()
+    id: Date.now().toString(),    // 唯一ID：时间戳
+    type: 'user',                 // 消息类型：用户消息
+    content: trimmed,             // 消息内容
+    timestamp: new Date()         // 消息时间
   }
 
+  // 4. 获取当前活跃的会话，将用户消息添加到列表
   const currentSession = sessions.value.find(s => s.id === activeSessionId.value)
   currentSession.messages.push(userMsg)
   currentSession.lastActiveTime = new Date()
 
-  // 设置会话标题
+  // 5. 自动设置会话标题（取第一条用户消息的前15个字符）
   if (!currentSession.title) {
     currentSession.title = trimmed.length > 15 ? `${trimmed.slice(0, 15)}...` : trimmed
   }
-
+  // 提交后清空输入框
   userInput.value = ''
 
-  try {
-    const response = await graphAgentApi.submitQuery(trimmed)
-    if (!response.success) {
-      throw new Error(response.message || '请求失败')
-    }
+  // 6. 创建AI机器人消息（初始为空，用于流式实时填充内容）
+  const agentMsgId = (Date.now() + 1).toString()
+  currentSession.messages.push({
+    id: agentMsgId,
+    type: 'agent',
+    content: '正在思考中...（前端蓝色）',
+    timestamp: new Date()
+  })
+  // 标记当前正在流式输出的消息ID
+  streamingMsgId.value = agentMsgId
 
-    // 添加Agent回复
-    const agentMsg = {
-      id: (Date.now() + 1).toString(),
-      type: 'agent',
-      content: response.answer,
-      timestamp: new Date()
+  try {
+    // ========================
+    // 核心：原生 fetch 请求 SSE 流式接口（axios不支持流式，必须用fetch）
+    // ========================
+    const response = await fetch('/api/graph-agent/query/stream', {
+      method: 'POST',                          // 请求方式：POST
+      headers: {
+        'Content-Type': 'application/json'     // 参数格式：JSON
+      },
+      // 传递给后端的参数：和后端接口接收字段一致
+      body: JSON.stringify({
+        query: trimmed,
+        timestamp: Date.now(),
+        enable_self_correction: true
+      })
+    })
+
+    // 判断HTTP请求是否成功（状态码200）
+    if (!response.ok) throw new Error(`接口请求失败，状态码：${response.status}`)
+
+    // 7. 解析后端返回的流式数据
+    const reader = response.body.getReader()   // 创建流读取器
+    const decoder = new TextDecoder('utf-8')  // 文本解码器
+    let result = ''                            // 存储完整的流数据
+
+    // 循环读取流数据（直到后端传输完毕）
+    while (true) {
+      const { done, value } = await reader.read()
+      // 后端传输完成，退出循环
+      if (done) break
+
+      // 解码流数据并拼接到结果中
+      result += decoder.decode(value, { stream: true })
+      
+      // 按 SSE 标准格式拆分数据（data: {}\n\n）
+      const lines = result.split('\n\n')
+      let fullContent = ''
+      
+      // 遍历解析每一行SSE数据
+      for (const line of lines) {
+        // 只处理以 data: 开头的有效数据
+        if (line.startsWith('data: ')) {
+          try {
+            // 去掉前缀，解析JSON
+            const json = JSON.parse(line.replace('data: ', ''))
+            // 拼接后端返回的内容
+            fullContent += json.content + '\n'
+          } catch (e) {
+            // 解析失败跳过（不影响主逻辑）
+            continue
+          }
+        }
+      }
+
+      // 8. 实时更新AI消息内容（打字机效果）
+      const msg = currentSession.messages.find(m => m.id === streamingMsgId.value)
+      if (msg) msg.content = fullContent
     }
-    currentSession.messages.push(agentMsg)
-    currentSession.lastActiveTime = new Date()
 
   } catch (error) {
-    console.error('[Chat] 提交失败:', error)
-    errorMessage.value = error.response?.data?.message || error.message || '网络请求失败，请稍后重试'
+    // 9. 异常处理：打印错误，显示错误提示
+    console.error('[Chat] 流式请求错误：', error)
+    errorMessage.value = '连接失败，请稍后重试'
     
-    setTimeout(() => {
-      errorMessage.value = ''
-    }, 5000)
+    // 错误提示3秒后自动消失
+    setTimeout(() => errorMessage.value = '', 3000)
   } finally {
+    // 10. 最终执行：无论成功/失败，关闭加载状态
     isSubmitting.value = false
+    streamingMsgId.value = ''
   }
 }
 
@@ -497,6 +578,7 @@ html, body, #app {
   font-size: 0.95rem;
   color: #1f2937;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  white-space: pre-wrap; /* 支持换行符 */
 }
 
 .message-item.user .message-text {

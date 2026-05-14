@@ -2,7 +2,9 @@
 API v1 路由
 提供直接Gremlin查询端点和Agent智能查询端点
 """
-from flask import request, jsonify
+from flask import request, jsonify, Response
+import json
+import time
 from .. import api_bp
 from services.queries import DirectQueryService
 from services.agents import get_agent_service
@@ -127,6 +129,80 @@ def handle_graph_agent_query():
                 "question": result["question"],
                 "error": result.get("error", "未知错误")
             }), 400
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"服务器内部错误: {str(e)}"
+        }), 500
+
+
+@api_bp.route('/graph-agent/query/stream', methods=['POST'])
+def handle_graph_agent_query_stream():
+    """
+    处理图数据库智能Agent流式查询请求（SSE）
+    
+    请求体:
+    {
+        "query": "用户输入的内容",
+        "timestamp": 当前时间戳,
+        "enable_self_correction": true/false (可选，默认为true)
+    }
+    
+    响应:
+    SSE事件流，每个事件格式:
+    data: {"type": "thought|action|observation|final_answer|error", "content": "...", "timestamp": 123}
+    """
+    try:
+        # 1. 验证请求
+        data = request.get_json()
+        if not data or 'query' not in data:
+            return jsonify({
+                "success": False,
+                "error": "缺少query字段"
+            }), 400
+        
+        user_query = data['query']
+        timestamp = data.get('timestamp', None)
+        enable_self_correction = data.get('enable_self_correction', True)
+        
+        # 2. 获取业务逻辑层服务实例
+        agent_service = get_agent_service(enable_self_correction=enable_self_correction)
+        
+        # 3. 创建SSE响应生成器
+        def generate():
+            try:
+                # 执行流式查询
+                for event in agent_service.stream_query(user_query):
+                    # 将事件转换为SSE格式
+                    sse_data = json.dumps(event, ensure_ascii=False)
+                    yield f"data: {sse_data}\n\n"
+                    
+                    # 强制刷新缓冲区
+                    time.sleep(0.01)
+                    
+            except GeneratorExit:
+                # 客户端断开连接
+                print("⚠️ 客户端断开SSE连接")
+            except Exception as e:
+                error_event = {
+                    "type": "error",
+                    "content": f"流式查询失败: {str(e)}",
+                    "timestamp": int(time.time())
+                }
+                yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+        
+        # 4. 返回SSE响应
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',  # 禁用Nginx缓冲
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
             
     except Exception as e:
         return jsonify({

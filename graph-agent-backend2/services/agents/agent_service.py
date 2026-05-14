@@ -110,6 +110,109 @@ class AgentQueryService:
                 "error": f"查询执行失败: {error_msg}"
             }
     
+    def stream_query(self, user_query: str):
+        """
+        流式处理用户自然语言查询（生成器）
+        
+        Args:
+            user_query: 用户的自然语言问题
+            
+        Yields:
+            SSE格式的事件数据字典
+        """
+        if not self._agent:
+            yield {
+                "type": "error",
+                "content": "Agent未初始化",
+                "timestamp": self._get_timestamp()
+            }
+            return
+        
+        try:
+            from .tools import StreamingCallbackHandler
+            from langchain.callbacks.manager import CallbackManager
+            import threading
+            
+            # 创建回调处理器
+            callback_handler = StreamingCallbackHandler()
+            callback_manager = CallbackManager([callback_handler])
+            
+            # 临时替换Agent的callback_manager以支持流式输出
+            original_callback_manager = self._agent.agent_executor.callback_manager
+            self._agent.agent_executor.callback_manager = callback_manager
+            
+            print(f"\n🔍 开始流式处理查询: {user_query}")
+            
+            # 发送初始事件
+            yield {
+                "type": "start",
+                "content": "开始处理查询...(后端)",
+                "timestamp": self._get_timestamp()
+            }
+            
+            # 在后台线程中执行Agent查询
+            result_container = {}
+            error_container = {}
+            
+            def run_agent():
+                try:
+                    result = self._agent.agent_executor.invoke({
+                        "input": user_query
+                    })
+                    result_container['result'] = result
+                except Exception as e:
+                    error_container['error'] = e
+                finally:
+                    # 标记完成
+                    callback_handler.mark_finished()
+            
+            # 启动后台线程
+            agent_thread = threading.Thread(target=run_agent, daemon=True)
+            agent_thread.start()
+            
+            # 从队列中实时读取步骤并yield
+            while True:
+                step = callback_handler.get_next_step(timeout=2.0)
+                
+                if step is None:
+                    # 收到结束信号
+                    break
+                
+                if step is not None:
+                    yield step
+            
+            # 等待线程结束
+            agent_thread.join(timeout=5.0)
+            
+            # 恢复原始callback_manager
+            self._agent.agent_executor.callback_manager = original_callback_manager
+            
+            # 检查是否有错误
+            if error_container:
+                raise error_container['error']
+            
+            # 发送完成事件
+            yield {
+                "type": "complete",
+                "content": "查询完成",
+                "timestamp": self._get_timestamp()
+            }
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ 流式查询执行失败: {error_msg}")
+            
+            yield {
+                "type": "error",
+                "content": f"查询执行失败: {error_msg}",
+                "timestamp": self._get_timestamp()
+            }
+    
+    def _get_timestamp(self):
+        """获取当前时间戳"""
+        import time
+        return int(time.time())
+
     def get_schema(self) -> Dict[str, Any]:
         """
         获取数据库Schema信息
