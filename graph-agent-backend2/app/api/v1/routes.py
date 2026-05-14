@@ -98,7 +98,7 @@ def handle_graph_agent_query():
         
         user_query = data['query']
         timestamp = data.get('timestamp', None)
-        enable_self_correction = data.get('enable_self_correction', True)  # 默认启用
+        enable_self_correction = data.get('enable_self_correction', True)  # ！！！！此为启动开关，默认启用
         
         # 2. 获取业务逻辑层服务实例（遵循分层架构原则）
         # 注意：由于是单例模式，第一次调用的参数会生效

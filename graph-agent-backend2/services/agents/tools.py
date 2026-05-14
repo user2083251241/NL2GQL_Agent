@@ -6,7 +6,7 @@ import json
 import os
 from langchain.tools import BaseTool
 from typing import Type, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from modules.database.client import HugeGraphDB
 from langchain_core.prompts import ChatPromptTemplate
 from modules.llm.client import get_llm
@@ -98,11 +98,29 @@ class ExecuteGremlinInput(BaseModel):
 
 
 class GetSchemaInput(BaseModel):
-    """获取Schema信息的输入参数（通常不需要参数）"""
-    dummy: Optional[str] = Field(
-        default="",
-        description="占位符参数，实际使用时不需要传入"
+    """获取Schema信息的输入参数"""
+    enable_semantic_enhancement: Optional[bool] = Field(
+        default=False,
+        description="是否启用中文语义增强，默认为False"
     )
+    
+    @validator('enable_semantic_enhancement', pre=True)
+    def parse_semantic_enhancement(cls, v):
+        """解析语义增强参数，支持字符串和JSON格式"""
+        if isinstance(v, str):
+            try:
+                # 尝试解析JSON字符串
+                parsed = json.loads(v)
+                if isinstance(parsed, dict) and 'enable_semantic_enhancement' in parsed:
+                    return bool(parsed['enable_semantic_enhancement'])
+                elif isinstance(parsed, bool):
+                    return parsed
+                else:
+                    return bool(parsed)
+            except (json.JSONDecodeError, TypeError):
+                # 如果不是有效的JSON，尝试直接转换为布尔值
+                return v.lower() in ('true', '1', 'yes', 'on')
+        return bool(v) if v is not None else False
 
 
 class AnalyzeErrorInput(BaseModel):
@@ -197,6 +215,7 @@ class GetSchemaTool(BaseTool):
         "包括所有顶点标签、边标签和它们的属性定义，"
         "并提供中文语义映射帮助理解数据含义。"
         "在生成Gremlin查询前，应该先调用此工具了解数据库结构。"
+        "可以通过enable_semantic_enhancement参数控制是否启用中文语义增强。"
     )
     args_schema: Type[BaseModel] = GetSchemaInput
     db: HugeGraphDB = None
@@ -205,13 +224,19 @@ class GetSchemaTool(BaseTool):
         """初始化工具，注入数据库实例"""
         super().__init__(db=db)
     
-    def _run(self, dummy: str = "") -> str:
+    def _run(self, enable_semantic_enhancement: bool = False) -> str:
         """
-        获取Schema信息并增强中文语义
+        获取Schema信息并根据参数决定是否增强中文语义
         
+        Args:
+            enable_semantic_enhancement: 是否启用中文语义增强
+            
         Returns:
-            格式化的Schema信息字符串（包含中文映射）
+            格式化的Schema信息字符串（可选择包含中文映射）
         """
+        # 强制禁用语义增强功能，用于消融实验
+        enable_semantic_enhancement = True
+        
         try:
             # 获取Schema
             schema = self.db.get_schema()
@@ -250,18 +275,20 @@ class GetSchemaTool(BaseTool):
             # 基础schema信息
             basic_schema_info = "\n".join(output_parts)
             
-            # 加载映射表并增强信息
-            mapping = load_schema_mapping()
-            enhanced_schema_info = enhance_schema_with_mapping(basic_schema_info, mapping)
-            
-            return enhanced_schema_info
+            # 根据开关决定是否增强信息
+            if enable_semantic_enhancement:
+                mapping = load_schema_mapping()
+                enhanced_schema_info = enhance_schema_with_mapping(basic_schema_info, mapping)
+                return enhanced_schema_info
+            else:
+                return basic_schema_info
             
         except Exception as e:
             return f"❌ 获取Schema异常: {str(e)}"
     
-    async def _arun(self, dummy: str = "") -> str:
+    async def _arun(self, enable_semantic_enhancement: bool = True) -> str:
         """异步执行（目前同步实现）"""
-        return self._run(dummy)
+        return self._run(enable_semantic_enhancement)
 
 
 # ==================== Analyze Error Tool ====================

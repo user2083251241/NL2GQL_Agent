@@ -1,72 +1,211 @@
 <template>
-  <div class="home-page">
-    <div class="card">
-      <h2 class="title">HugeGraph查询智能体</h2>
-
-      <!-- 文本输入框 -->
-      <textarea
-        v-model="userInput"
-        class="text-input"
-        rows="4"
-        placeholder="请输入您的问题或指令..."
-        :disabled="isSubmitting"
-      ></textarea>
-
-      <!-- 底部文字说明（位于输入框正下方） -->
-      <div class="input-caption">
-        💡 提示：您可以输入图查询语句或自然语言描述，点击提交按钮后 Agent 会处理您的请求。
+  <div class="chat-layout">
+    <!-- 左侧侧边栏：会话历史 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <button class="new-chat-btn" @click="createNewSession">
+          <span class="icon">+</span> 新建会话
+        </button>
       </div>
-
-      <!-- 提交按钮 + 清空按钮 -->
-      <div class="button-group">
-        <button 
-          class="submit-btn" 
-          @click="handleSubmit" 
-          :disabled="isSubmitting"
+      <div class="session-list">
+        <div
+          v-for="session in sessions"
+          :key="session.id"
+          class="session-item"
+          :class="{ active: session.id === activeSessionId }"
+          @click="switchSession(session.id)"
         >
-          {{ isSubmitting ? '提交中...' : '提交' }}
-        </button>
-        <button class="clear-btn" @click="clearInput" :disabled="isSubmitting">
-          清空
-        </button>
+          <div class="session-info">
+            <div class="session-title">{{ session.title || '新会话' }}</div>
+            <div class="session-time">{{ formatTime(session.lastActiveTime) }}</div>
+          </div>
+          <!-- 删除按钮：hover显示 -->
+          <button 
+            class="delete-btn" 
+            @click.stop="deleteSession(session.id)"
+            title="删除会话"
+          >
+            ×
+          </button>
+        </div>
       </div>
+    </aside>
 
-      <!-- 错误提示区域 -->
-      <div class="error-area" v-if="errorMessage">
-        <div class="error-message">
+    <!-- 右侧主聊天区域 -->
+    <main class="chat-container">
+      <!-- 聊天头部 -->
+      <header class="chat-header">
+        <h2 class="title">HugeGraph查询智能体</h2>
+      </header>
+
+      <!-- 消息列表区域 -->
+      <div class="chat-messages" ref="messagesRef">
+        <!-- 空状态提示 -->
+        <div v-if="currentMessages.length === 0" class="empty-tip">
+          <p>发送消息开始对话</p>
+        </div>
+
+        <!-- 消息气泡 -->
+        <div
+          v-for="msg in currentMessages"
+          :key="msg.id"
+          class="message-item"
+          :class="msg.type"
+        >
+          <div class="message-bubble">
+            <div class="message-avatar" v-if="msg.type === 'agent'"></div>
+            <div class="message-content">
+              <div class="message-text">{{ msg.content }}</div>
+              <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+            </div>
+            <div class="message-avatar user-avatar" v-if="msg.type === 'user'"></div>
+          </div>
+        </div>
+
+        <!-- 加载中状态 -->
+        <div v-if="isSubmitting" class="message-item agent">
+          <div class="message-bubble">
+            <div class="message-avatar"></div>
+            <div class="message-content">
+              <div class="loading-text">正在思考中...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div v-if="errorMessage" class="error-tip">
           ❌ {{ errorMessage }}
         </div>
       </div>
 
-      <!-- Agent 回答区域 -->
-      <div class="answer-area" v-if="agentAnswer">
-        <div class="answer-content">
-          <div class="answer-title">🤖 Agent 回答：</div>
-          <div class="answer-text">{{ agentAnswer }}</div>
+      <!-- 底部输入框区域 -->
+      <div class="chat-input-area">
+        <div class="input-wrapper">
+          <textarea
+            v-model="userInput"
+            class="text-input"
+            rows="1"
+            placeholder="请输入您的问题或指令..."
+            :disabled="isSubmitting"
+            @keydown.enter.prevent="handleSubmit"
+          ></textarea>
+          <div class="button-group">
+            <button 
+              class="submit-btn" 
+              @click="handleSubmit" 
+              :disabled="isSubmitting || !userInput.trim()"
+            >
+              {{ isSubmitting ? '发送中' : '提交' }}
+            </button>
+            <button 
+              class="clear-btn" 
+              @click="clearInput" 
+              :disabled="isSubmitting"
+            >
+              清空
+            </button>
+          </div>
+        </div>
+        <div class="input-caption">
+           提示：您可以输入图查询语句或自然语言描述，Agent 会为您处理请求。
         </div>
       </div>
-
-      <!-- 反馈区域：显示最近提交的内容 -->
-      <div class="feedback-area" v-if="lastSubmitted && !errorMessage && !agentAnswer">
-        <div class="feedback-success">
-          ✅ 提交成功！<br />
-          <span class="submitted-text">“{{ lastSubmitted }}”</span>
-        </div>
-      </div>
-    </div>
+    </main>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { graphAgentApi } from '@/api/index'
 
 // 响应式数据
-const userInput = ref('')        // 输入框内容
-const isSubmitting = ref(false)  // 提交状态
-const lastSubmitted = ref('')    // 最后一次提交的内容
-const errorMessage = ref('')     // 错误消息
-const agentAnswer = ref('')      // Agent的回答
+const userInput = ref('')        
+const isSubmitting = ref(false)  
+const errorMessage = ref('')     
+const messagesRef = ref(null)    
+
+// 会话管理
+const sessions = ref([])
+const activeSessionId = ref(null)
+
+// 当前会话的消息列表
+const currentMessages = computed(() => {
+  const session = sessions.value.find(s => s.id === activeSessionId.value)
+  return session?.messages || []
+})
+
+// 初始化：创建默认会话
+const initDefaultSession = () => {
+  const newSession = createSession()
+  sessions.value.push(newSession)
+  activeSessionId.value = newSession.id
+}
+
+// 创建新会话
+const createSession = () => {
+  return {
+    id: Date.now().toString(),
+    title: '',
+    messages: [],
+    lastActiveTime: new Date()
+  }
+}
+
+// 新建会话按钮
+const createNewSession = () => {
+  const newSession = createSession()
+  sessions.value.unshift(newSession) 
+  activeSessionId.value = newSession.id
+  clearInput()
+}
+
+// 切换会话
+const switchSession = (sessionId) => {
+  activeSessionId.value = sessionId
+  clearInput()
+}
+
+// 删除会话（核心功能）
+const deleteSession = (sessionId) => {
+  // 禁止删除最后一个会话
+  if (sessions.value.length <= 1) {
+    alert('❌ 至少保留一个会话')
+    return
+  }
+  
+  // 确认删除
+  if (!confirm('确定要删除该会话吗？此操作不可恢复！')) {
+    return
+  }
+
+  // 删除会话
+  sessions.value = sessions.value.filter(s => s.id !== sessionId)
+
+  // 如果删除的是当前激活的会话，自动切换到第一个会话
+  if (activeSessionId.value === sessionId) {
+    activeSessionId.value = sessions.value[0].id
+  }
+}
+
+// 格式化时间
+const formatTime = (date) => {
+  const d = new Date(date)
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+// 自动滚动到底部
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (messagesRef.value) {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    }
+  })
+}
+
+// 监听消息变化，自动滚动
+watch(currentMessages, () => {
+  scrollToBottom()
+}, { deep: true })
 
 // 提交处理
 const handleSubmit = async () => {
@@ -77,35 +216,48 @@ const handleSubmit = async () => {
   }
   if (isSubmitting.value) return
 
-  // 重置状态
   isSubmitting.value = true
   errorMessage.value = ''
-  lastSubmitted.value = ''
-  agentAnswer.value = ''
+
+  // 添加用户消息
+  const userMsg = {
+    id: Date.now().toString(),
+    type: 'user',
+    content: trimmed,
+    timestamp: new Date()
+  }
+
+  const currentSession = sessions.value.find(s => s.id === activeSessionId.value)
+  currentSession.messages.push(userMsg)
+  currentSession.lastActiveTime = new Date()
+
+  // 设置会话标题
+  if (!currentSession.title) {
+    currentSession.title = trimmed.length > 15 ? `${trimmed.slice(0, 15)}...` : trimmed
+  }
+
+  userInput.value = ''
 
   try {
-    // 发送真实的网络请求
     const response = await graphAgentApi.submitQuery(trimmed)
-    
-    // 验证响应格式
     if (!response.success) {
       throw new Error(response.message || '请求失败')
     }
-    
-    // 更新反馈和答案
-    lastSubmitted.value = response.question
-    agentAnswer.value = response.answer
-    console.log('[HomePage] 用户提问:', response.question)
-    console.log('[HomePage] Agent回答:', response.answer)
 
-    // 可选：提交后清空输入框（若需要保留，注释下面一行）
-    // userInput.value = ''
+    // 添加Agent回复
+    const agentMsg = {
+      id: (Date.now() + 1).toString(),
+      type: 'agent',
+      content: response.answer,
+      timestamp: new Date()
+    }
+    currentSession.messages.push(agentMsg)
+    currentSession.lastActiveTime = new Date()
+
   } catch (error) {
-    // 处理错误
-    console.error('[HomePage] 提交失败:', error)
+    console.error('[Chat] 提交失败:', error)
     errorMessage.value = error.response?.data?.message || error.message || '网络请求失败，请稍后重试'
     
-    // 显示错误提示5秒后自动清除
     setTimeout(() => {
       errorMessage.value = ''
     }, 5000)
@@ -114,58 +266,309 @@ const handleSubmit = async () => {
   }
 }
 
-// 清空输入框及反馈
+// 清空输入框
 const clearInput = () => {
   userInput.value = ''
-  lastSubmitted.value = ''
   errorMessage.value = ''
-  agentAnswer.value = ''
 }
+
+// 初始化
+initDefaultSession()
 </script>
 
 <style scoped>
-.home-page {
-  min-height: 100vh;
+/* 全局基础重置 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #app {
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-layout {
+  display: flex;
+  height: 95vh;
+  margin: 0 auto;  /* 居中显示 */
+  background: #f7f8fa;
+}
+
+/* 左侧侧边栏 */
+.sidebar {
+  width: 240px;
+  background: rgb(226, 226, 226);
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+}
+
+.sidebar-header {
+  margin-bottom: 1rem;
+}
+
+.new-chat-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ffffff;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e9edf2 100%);
-  padding: 1.5rem;
-}
-
-.card {
-  max-width: 700px;
-  width: 100%;
-  background: white;
-  border-radius: 2rem;
-  box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.15);
-  padding: 2rem 2rem 2.5rem;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: #374151;
   transition: all 0.2s;
 }
 
+.new-chat-btn:hover {
+  background: #e8e8e8;
+  border-color: #d1d5db;
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* 会话项：弹性布局，容纳删除按钮 */
+.session-item {
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-item:hover {
+  background: #f3f4f6;
+}
+
+.session-item.active {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.session-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.session-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-time {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* 删除按钮样式 */
+.delete-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 14px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+/* 悬浮时显示删除按钮 */
+.session-item:hover .delete-btn {
+  display: flex;
+}
+
+.delete-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+
+/* 右侧聊天容器 */
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.chat-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
 .title {
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  margin-bottom: 1.8rem;
   background: linear-gradient(120deg, #1e293b, #2d3a4f);
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  /*border-left: 4px solid #3b82f6;*/
-  padding-left: 1rem;
+}
+
+/* 消息列表 */
+.chat-messages {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  background: #f9fafb;
+}
+
+.empty-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #9ca3af;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.message-item {
+  margin-bottom: 1.5rem;
+  display: flex;
+}
+
+.message-item.user {
+  justify-content: flex-end;
+}
+
+.message-item.agent {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 70%;
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.2rem;
+}
+
+.user-avatar {
+  background: #3b82f6;
+  color: white;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.message-text {
+  background: white;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #1f2937;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.message-item.user .message-text {
+  background: #3b82f6;
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.message-item.agent .message-text {
+  background: white;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.message-time {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  align-self: flex-end;
+}
+
+.message-item.user .message-time {
+  align-self: flex-start;
+}
+
+.loading-text {
+  background: white;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  border-bottom-left-radius: 0.25rem;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #6b7280;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.error-tip {
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  border-left: 4px solid #ef4444;
+  font-size: 0.95rem;
+  margin: 0 auto;
+  max-width: 70%;
+}
+
+/* 底部输入框区域 */
+.chat-input-area {
+  padding: 1.5rem 2rem;
+  border-top: 1px solid #e5e7eb;
+  background: white;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
 }
 
 .text-input {
-  width: 100%;
+  flex: 1;
   padding: 1rem;
   font-size: 1rem;
   font-family: inherit;
   border: 1.5px solid #e2e8f0;
   border-radius: 1rem;
-  resize: vertical;
+  resize: none;
   outline: none;
   transition: border 0.2s, box-shadow 0.2s;
-  margin-bottom: 0.75rem;
+  min-height: 50px;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
 .text-input:focus {
@@ -178,26 +581,13 @@ const clearInput = () => {
   cursor: not-allowed;
 }
 
-.input-caption {
-  font-size: 0.85rem;
-  color: #475569;
-  background: #f8fafc;
-  padding: 0.6rem 1rem;
-  border-radius: 1rem;
-  margin-bottom: 1.5rem;
-  /*border-left: 3px solid #3b82f6;*/
-  line-height: 1.4;
-}
-
 .button-group {
   display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  margin-bottom: 1.8rem;
+  gap: 0.75rem;
 }
 
 .submit-btn, .clear-btn {
-  padding: 0.7rem 1.8rem;
+  padding: 0.75rem 1.5rem;
   border-radius: 2rem;
   font-weight: 600;
   font-size: 0.95rem;
@@ -210,17 +600,11 @@ const clearInput = () => {
 .submit-btn {
   background: #3b82f6;
   color: white;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 .submit-btn:hover:not(:disabled) {
   background: #2563eb;
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.3);
-}
-
-.submit-btn:active:not(:disabled) {
-  transform: translateY(1px);
 }
 
 .submit-btn:disabled {
@@ -237,93 +621,28 @@ const clearInput = () => {
 
 .clear-btn:hover:not(:disabled) {
   background: #e2e8f0;
-  transform: translateY(-1px);
 }
 
-.clear-btn:active:not(:disabled) {
-  transform: translateY(1px);
+.input-caption {
+  font-size: 0.85rem;
+  color: #64748b;
+  text-align: center;
 }
 
-.clear-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.error-area {
-  margin-bottom: 1.8rem;
-}
-
-.error-message {
-  color: #dc2626;
-  background: #fef2f2;
-  border-radius: 1rem;
-  padding: 1rem;
-  border-left: 4px solid #ef4444;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.answer-area {
-  margin-bottom: 1.8rem;
-}
-
-.answer-content {
-  background: #f8fafc;
-  border-radius: 1rem;
-  padding: 1.2rem;
-  /*border-left: 4px solid #3b82f6;*/
-}
-
-.answer-title {
-  font-weight: 600;
-  color: #1e40af;
-  margin-bottom: 0.5rem;
-  font-size: 0.95rem;
-}
-
-.answer-text {
-  color: #1e293b;
-  line-height: 1.6;
-  font-size: 1rem;
-  white-space: pre-wrap;
-}
-
-.feedback-area {
-  background: #f0fdf4;
-  border-radius: 1rem;
-  padding: 1rem;
-  border-left: 4px solid #22c55e;
-}
-
-.feedback-success {
-  color: #166534;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.submitted-text {
-  font-weight: 500;
-  background: #dcfce7;
-  padding: 0.2rem 0.5rem;
-  border-radius: 0.5rem;
-  display: inline-block;
-  margin-top: 0.3rem;
-  word-break: break-word;
-}
-
-@media (max-width: 560px) {
-  .card {
-    padding: 1.5rem;
+/* 响应式适配 */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
   }
-  .title {
-    font-size: 1.5rem;
+
+  .chat-header,
+  .chat-messages,
+  .chat-input-area {
+    padding: 1rem;
   }
-  .button-group {
-    flex-direction: column;
-  }
-  .submit-btn, .clear-btn {
-    width: 100%;
-    justify-content: center;
+
+  .message-bubble {
+    max-width: 85%;
   }
 }
 </style>

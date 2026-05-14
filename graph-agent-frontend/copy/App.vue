@@ -15,8 +15,6 @@ import HomePage from './components/HomePage.vue'
   box-sizing: border-box;
 }
 body {
-  overflow: hidden; /* 禁止浏览器滑动 */
-  height: 95vh;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background: #f0f2f5;
 }
