@@ -56,50 +56,18 @@
             <div class="message-avatar" v-if="msg.type === 'agent'"></div>
             <div class="message-content">
               <!-- Agent推理链展示 -->
-              <div v-if="msg.reasoningSteps && msg.reasoningSteps.length > 0" class="reasoning-chain-wrapper">
+              <div v-if="msg.reasoningSteps && msg.reasoningSteps.length > 0" class="reasoning-chain">
                 <div 
-                  v-show="reasoningExpanded[msg.id] !== false"
-                  class="reasoning-chain"
+                  v-for="(step, index) in msg.reasoningSteps" 
+                  :key="index" 
+                  class="reasoning-step"
                 >
-                  <div 
-                    v-for="(step, index) in msg.reasoningSteps" 
-                    :key="index" 
-                    class="reasoning-step"
-                  >
-                    <pre class="step-text">{{ step.content }}</pre>
-                  </div>
+                  <pre class="step-text">{{ step.content }}</pre>
                 </div>
-                
-                <!-- 收起/展开按钮 -->
-                <button 
-                  class="toggle-reasoning-btn"
-                  @click="toggleReasoning(msg.id)"
-                  :title="reasoningExpanded[msg.id] !== false ? '收起推导过程' : '展开推导过程'"
-                >
-                  {{ reasoningExpanded[msg.id] !== false ? '▲ 收起' : '▼ 展开' }}
-                </button>
-              </div>
-              
-              <!-- 最终答案展示（推理结束后显示） -->
-              <div v-if="msg.finalAnswer" class="final-answer">
-                <div class="answer-label">💡 最终答案</div>
-                <div class="answer-content">{{ msg.finalAnswer }}</div>
               </div>
               
               <!-- 兼容旧格式（纯文本） -->
-              <div v-else-if="!msg.finalAnswer && !msg.reasoningSteps?.length" class="message-text">{{ msg.content }}</div>
-              
-              <!-- 重新生成按钮（仅Agent消息显示） -->
-              <div v-if="msg.type === 'agent' && (msg.finalAnswer || msg.content)" class="regenerate-container">
-                <button 
-                  class="regenerate-btn" 
-                  @click="handleRegenerate(msg)"
-                  :disabled="isSubmitting"
-                  title="重新生成回答"
-                >
-                  ↻ 重新生成
-                </button>
-              </div>
+              <div v-else class="message-text">{{ msg.content }}</div>
               
               <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
             </div>
@@ -169,8 +137,6 @@ const errorMessage = ref('')
 const messagesRef = ref(null)    
 // 新增：流式消息ID（用于标记当前正在流式输出的Agent消息）
 const streamingMsgId = ref('')
-// 新增：存储每个消息的推理链展开状态
-const reasoningExpanded = ref({})
 
 // 会话管理
 const sessions = ref([])
@@ -316,8 +282,6 @@ const handleSubmit = async () => {
     id: agentMsgId,
     type: 'agent',
     reasoningSteps: [],  // 存储推理链步骤
-    finalAnswer: null,   // 存储最终答案
-    question: '',        // 存储用户问题
     timestamp: new Date()
   })
   // 标记当前正在流式输出的消息ID
@@ -368,19 +332,6 @@ const handleSubmit = async () => {
             // 去掉前缀，解析JSON
             const json = JSON.parse(line.replace('data: ', ''))
             
-            // 判断是否为最终答案（与非流式接口格式一致）
-            if (json.success && json.answer !== undefined) {
-              // 这是最终答案事件，更新消息的最终答案字段
-              const msg = currentSession.messages.find(m => m.id === streamingMsgId.value)
-              if (msg) {
-                msg.finalAnswer = json.answer
-                msg.question = json.question
-                // 自动滚动到底部
-                scrollToBottom()
-              }
-              continue  // 跳过后续处理
-            }
-            
             // 将所有类型的步骤都添加到推理链中
             if (json.type && json.content) {
               const msg = currentSession.messages.find(m => m.id === streamingMsgId.value)
@@ -422,121 +373,6 @@ const clearInput = () => {
   errorMessage.value = ''
 }
 
-// 重新生成回答（核心功能）
-const handleRegenerate = async (message) => {
-  // 获取用户问题（从消息中或前一条用户消息）
-  let question = message.question
-  
-  // 如果消息中没有存储问题，则查找前一条用户消息
-  if (!question) {
-    const currentSession = sessions.value.find(s => s.id === activeSessionId.value)
-    const msgIndex = currentSession.messages.findIndex(m => m.id === message.id)
-    
-    // 向前查找最近的用户消息
-    for (let i = msgIndex - 1; i >= 0; i--) {
-      if (currentSession.messages[i].type === 'user') {
-        question = currentSession.messages[i].content
-        break
-      }
-    }
-  }
-  
-  if (!question) {
-    alert('❌ 未找到对应的问题')
-    return
-  }
-  
-  // 防止重复提交
-  if (isSubmitting.value) return
-  
-  // 重置状态
-  isSubmitting.value = true
-  errorMessage.value = ''
-  streamingMsgId.value = ''
-  
-  // 清空当前消息的推理步骤和最终答案，准备重新生成
-  message.reasoningSteps = []
-  message.finalAnswer = null
-  message.content = ''
-  message.timestamp = new Date()
-  
-  // 标记当前正在流式输出的消息ID
-  streamingMsgId.value = message.id
-  
-  try {
-    // 发送流式请求
-    const response = await fetch('/api/graph-agent/query/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        query: question,
-        timestamp: Date.now(),
-        enable_self_correction: true
-      })
-    })
-    
-    if (!response.ok) throw new Error(`接口请求失败，状态码：${response.status}`)
-    
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let result = ''
-    
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      result += decoder.decode(value, { stream: true })
-      
-      const lines = result.split('\n\n')
-      
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const json = JSON.parse(line.replace('data: ', ''))
-            
-            // 判断是否为最终答案
-            if (json.success && json.answer !== undefined) {
-              message.finalAnswer = json.answer
-              message.question = json.question
-              scrollToBottom()
-              continue
-            }
-            
-            // 将推理步骤添加到消息中
-            if (json.type && json.content) {
-              message.reasoningSteps.push({
-                type: json.type,
-                content: json.content
-              })
-              scrollToBottom()
-            }
-          } catch (e) {
-            continue
-          }
-        }
-      }
-    }
-    
-  } catch (error) {
-    console.error('[Chat] 重新生成失败:', error)
-    errorMessage.value = '重新生成失败，请稍后重试'
-    setTimeout(() => errorMessage.value = '', 3000)
-  } finally {
-    isSubmitting.value = false
-    streamingMsgId.value = ''
-  }
-}
-
-// 切换推理链展开/收起状态
-const toggleReasoning = (messageId) => {
-  // 如果当前是展开状态，则设置为收起；否则设置为展开
-  reasoningExpanded.value[messageId] = !reasoningExpanded.value[messageId]
-  // 确保响应式更新
-  reasoningExpanded.value = { ...reasoningExpanded.value }
-}
-
 // 初始化
 initDefaultSession()
 </script>
@@ -551,21 +387,14 @@ initDefaultSession()
 
 html, body, #app {
   height: 100%;
-  width: 100%;
   overflow: hidden;
-  /* 全局基础字体 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .chat-layout {
   display: flex;
-  height: 100vh;
-  /* width: 90vw; */
-  width: 100%;
-  margin: 0 auto;
+  height: 95vh;
+  margin: 0 auto;  /* 居中显示 */
   background: #f7f8fa;
-  /* 统一核心字体 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* 左侧侧边栏 */
@@ -596,8 +425,6 @@ html, body, #app {
   font-size: 0.95rem;
   color: #374151;
   transition: all 0.2s;
-  /* 继承全局字体 */
-  font-family: inherit;
 }
 
 .new-chat-btn:hover {
@@ -612,7 +439,6 @@ html, body, #app {
 
 /* 会话项：弹性布局，容纳删除按钮 */
 .session-item {
-  background: #eff6ff;
   padding: 0.75rem 1rem;
   border-radius: 0.75rem;
   margin-bottom: 0.5rem;
@@ -665,7 +491,6 @@ html, body, #app {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  font-family: inherit;
 }
 
 /* 悬浮时显示删除按钮 */
@@ -698,7 +523,6 @@ html, body, #app {
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  font-family: inherit;
 }
 
 /* 消息列表 */
@@ -756,7 +580,7 @@ html, body, #app {
 }
 
 .user-avatar {
-  background: #5e93e8;
+  background: #3b82f6;
   color: white;
 }
 
@@ -774,17 +598,15 @@ html, body, #app {
   font-size: 0.95rem;
   color: #1f2937;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  white-space: pre-wrap;
-  font-family: inherit;
+  white-space: pre-wrap; /* 支持换行符 */
 }
 
 .message-item.user .message-text {
-  background: #5e93e8;
+  background: #3b82f6;
   color: white;
   border-bottom-right-radius: 0.25rem;
   text-align: justify;
   text-justify: inter-word;
-  box-shadow: 0 4px 6px rgba(102, 126, 234, 0.2);
 }
 
 .message-item.agent .message-text {
@@ -795,14 +617,6 @@ html, body, #app {
 }
 
 /* LangChain推理链样式 */
-.reasoning-chain-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-  position: relative;
-}
-
 .reasoning-chain {
   display: flex;
   flex-direction: column;
@@ -810,122 +624,21 @@ html, body, #app {
   width: 100%;
 }
 
-/* 收起/展开按钮样式 */
-.toggle-reasoning-btn {
-  align-self: flex-end;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.8rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  background: #f8fafc;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-  margin-top: 0.25rem;
-}
-
-.toggle-reasoning-btn:hover {
-  background: #e2e8f0;
-  color: #3b82f6;
-  border-color: #cbd5e1;
-}
-
 .reasoning-step {
   padding: 0.75rem;
   border-radius: 0.5rem;
   background: #f8f9fa;
   border-left: 3px solid #e5e7eb;
-  animation: fadeInStep 0.3s ease-in;
-}
-
-@keyframes fadeInStep {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .step-text {
   margin: 0;
+  font-family: 'Courier New', Courier, monospace;
   font-size: 0.875rem;
   line-height: 1.6;
   color: #1f2937;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-/* 最终答案样式 */
-.final-answer {
-  margin-top: 1rem;
-  padding: 1.25rem;
-  border-radius: 0.75rem;
-  background: #e5e7eb;/*linear-gradient(135deg, #667eea 0%, #764ba2 100%)*/ 
-  color: rgb(23, 23, 23);
-  box-shadow: 0 4px 6px rgba(102, 126, 234, 0.2);
-  animation: fadeInAnswer 0.5s ease-out;
-}
-
-@keyframes fadeInAnswer {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.answer-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  opacity: 0.9;
-}
-
-.answer-content {
-  font-size: 1rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* 重新生成按钮样式 */
-.regenerate-container {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.regenerate-btn {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.85rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  background: #f8fafc;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.regenerate-btn:hover:not(:disabled) {
-  background: #e2e8f0;
-  color: #3b82f6;
-  border-color: #cbd5e1;
-}
-
-.regenerate-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .message-time {
@@ -947,7 +660,6 @@ html, body, #app {
   font-size: 0.95rem;
   color: #6b7280;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  font-family: inherit;
 }
 
 .error-tip {
@@ -959,7 +671,6 @@ html, body, #app {
   font-size: 0.95rem;
   margin: 0 auto;
   max-width: 70%;
-  font-family: inherit;
 }
 
 /* 底部输入框区域 */
@@ -1047,7 +758,6 @@ html, body, #app {
   font-size: 0.85rem;
   color: #64748b;
   text-align: center;
-  font-family: inherit;
 }
 
 /* 响应式适配 */

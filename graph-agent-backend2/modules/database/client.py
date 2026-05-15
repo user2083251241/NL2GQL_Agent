@@ -39,7 +39,7 @@ class HugeGraphDB:
                 graph=Config.HUGEGRAPH_GRAPH
             )
             self._initialized = True
-            print(f"✅ HugeGraph连接成功: {Config.HUGEGRAPH_HOST}:{Config.HUGEGRAPH_PORT}")
+            #print(f"✅ HugeGraph连接成功: {Config.HUGEGRAPH_HOST}:{Config.HUGEGRAPH_PORT}")
         except Exception as e:
             print(f"❌ HugeGraph连接失败: {e}")
             raise

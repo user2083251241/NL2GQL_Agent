@@ -172,14 +172,30 @@ def handle_graph_agent_query_stream():
         # 3. 创建SSE响应生成器
         def generate():
             try:
+                final_answer = None
+                
                 # 执行流式查询
                 for event in agent_service.stream_query(user_query):
                     # 将事件转换为SSE格式
                     sse_data = json.dumps(event, ensure_ascii=False)
                     yield f"data: {sse_data}\n\n"
                     
+                    # 捕获最终答案
+                    if event.get('type') == 'final_answer':
+                        final_answer = event.get('content', '')
+                    
                     # 强制刷新缓冲区
                     time.sleep(0.01)
+                
+                # 流式推理结束后，发送最终答案（与非流式接口格式一致）
+                if final_answer:
+                    final_event = {
+                        "success": True,
+                        "question": user_query,
+                        "answer": final_answer,
+                        "timestamp": timestamp or int(time.time())
+                    }
+                    yield f"data: {json.dumps(final_event, ensure_ascii=False)}\n\n"
                     
             except GeneratorExit:
                 # 客户端断开连接
@@ -191,7 +207,7 @@ def handle_graph_agent_query_stream():
                     "timestamp": int(time.time())
                 }
                 yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
-        
+
         # 4. 返回SSE响应
         return Response(
             generate(),

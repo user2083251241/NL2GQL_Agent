@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import HomePage from './components/HomePage_SSE.vue'
+import HomePage from './HomePage_SSE.vue'
 </script>
 
 <style>
@@ -16,8 +16,7 @@ import HomePage from './components/HomePage_SSE.vue'
 }
 body {
   overflow: hidden; /* 禁止浏览器滑动 */
-  height: 100vh;
-  width: 100vw;
+  height: 95vh;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background: #f0f2f5;
 }

@@ -41,7 +41,7 @@ class GraphAgent:
         # 创建Agent
         self.agent_executor = self._create_agent()
         
-        print(f"✅ GraphAgent 初始化成功 (自我修正: {'启用' if enable_self_correction else '禁用'})")
+        #print(f"✅ GraphAgent 初始化成功 (自我修正: {'启用' if enable_self_correction else '禁用'})")
     
     def _create_agent(self) -> AgentExecutor:
         """
