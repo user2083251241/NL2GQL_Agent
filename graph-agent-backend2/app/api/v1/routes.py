@@ -122,13 +122,23 @@ def handle_graph_agent_query():
             if timestamp is not None:
                 response_data["timestamp"] = timestamp
             
+            # 添加token使用统计
+            if "token_usage" in result:
+                response_data["token_usage"] = result["token_usage"]
+            
             return jsonify(response_data)
         else:
-            return jsonify({
+            response_data = {
                 "success": False,
                 "question": result["question"],
                 "error": result.get("error", "未知错误")
-            }), 400
+            }
+            
+            # 添加token使用统计（即使失败也返回）
+            if "token_usage" in result:
+                response_data["token_usage"] = result["token_usage"]
+            
+            return jsonify(response_data), 400
             
     except Exception as e:
         return jsonify({
@@ -173,6 +183,7 @@ def handle_graph_agent_query_stream():
         def generate():
             try:
                 final_answer = None
+                token_usage = None
                 
                 # 执行流式查询
                 for event in agent_service.stream_query(user_query):
@@ -180,9 +191,11 @@ def handle_graph_agent_query_stream():
                     sse_data = json.dumps(event, ensure_ascii=False)
                     yield f"data: {sse_data}\n\n"
                     
-                    # 捕获最终答案
+                    # 捕获最终答案和token使用信息
                     if event.get('type') == 'final_answer':
                         final_answer = event.get('content', '')
+                        # 提取token使用信息（如果存在）
+                        token_usage = event.get('token_usage', None)
                     
                     # 强制刷新缓冲区
                     time.sleep(0.01)
@@ -195,6 +208,9 @@ def handle_graph_agent_query_stream():
                         "answer": final_answer,
                         "timestamp": timestamp or int(time.time())
                     }
+                    # 添加token使用统计
+                    if token_usage:
+                        final_event["token_usage"] = token_usage
                     yield f"data: {json.dumps(final_event, ensure_ascii=False)}\n\n"
                     
             except GeneratorExit:

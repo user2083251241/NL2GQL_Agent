@@ -83,14 +83,14 @@
               <!-- 最终答案展示（推理结束后显示） -->
               <div v-if="msg.finalAnswer" class="final-answer">
                 <div class="answer-label">💡 最终答案</div>
-                <div class="answer-content">{{ msg.finalAnswer }}</div>
+                <pre class="answer-content">{{ msg.finalAnswer }}</pre>
               </div>
               
               <!-- 兼容旧格式（纯文本） -->
               <div v-else-if="!msg.finalAnswer && !msg.reasoningSteps?.length" class="message-text">{{ msg.content }}</div>
               
-              <!-- 重新生成按钮（仅Agent消息显示） -->
-              <div v-if="msg.type === 'agent' && (msg.finalAnswer || msg.content)" class="regenerate-container">
+              <!-- 重新生成按钮和反馈按钮（仅Agent消息显示） -->
+              <div v-if="msg.type === 'agent' && (msg.finalAnswer || msg.content)" class="action-buttons">
                 <button 
                   class="regenerate-btn" 
                   @click="handleRegenerate(msg)"
@@ -99,6 +99,24 @@
                 >
                   ↻ 重新生成
                 </button>
+                <div class="feedback-buttons">
+                  <button 
+                    class="feedback-btn"
+                    :class="{ active: msg.feedback === 'like' }"
+                    @click="handleFeedback(msg, 'like')"
+                    title="点赞"
+                  >
+                    △
+                  </button>
+                  <button 
+                    class="feedback-btn"
+                    :class="{ active: msg.feedback === 'dislike' }"
+                    @click="handleFeedback(msg, 'dislike')"
+                    title="反对"
+                  >
+                    ▽
+                  </button>
+                </div>
               </div>
               
               <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
@@ -161,6 +179,27 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+// 新增：自定义格式化JSON，每个键值对空一行
+const formatJsonWithBlankLine = (obj) => {
+  try {
+    const data = typeof obj === 'string' ? JSON.parse(obj) : obj
+    let result = '{\n'
+    const keys = Object.keys(data)
+    keys.forEach((key, index) => {
+      const value = JSON.stringify(data[key])
+      // 拼接 键: 值
+      result += `  "${key}": ${value}`
+      // 不是最后一项就添加换行 + 空行
+      if (index !== keys.length - 1) {
+        result += ',\n\n'
+      }
+    })
+    result += '\n}'
+    return result
+  } catch (e) {
+    return obj
+  }
+}
 
 // 响应式数据
 const userInput = ref('')        
@@ -370,15 +409,21 @@ const handleSubmit = async () => {
             
             // 判断是否为最终答案（与非流式接口格式一致）
             if (json.success && json.answer !== undefined) {
-              // 这是最终答案事件，更新消息的最终答案字段
               const msg = currentSession.messages.find(m => m.id === streamingMsgId.value)
               if (msg) {
-                msg.finalAnswer = json.answer
+                // 自动格式化JSON，缩进2个空格
+                try {
+                  // const parsed = typeof json.answer === 'string' ? JSON.parse(json.answer) : json.answer
+                  // msg.finalAnswer = JSON.stringify(parsed, null, 2) // 格式化JSON
+                  msg.finalAnswer = formatJsonWithBlankLine(json.answer)
+                } catch (e) {
+                  // 解析失败则使用原始内容
+                  msg.finalAnswer = json.answer
+                }
                 msg.question = json.question
-                // 自动滚动到底部
                 scrollToBottom()
               }
-              continue  // 跳过后续处理
+              continue
             }
             
             // 将所有类型的步骤都添加到推理链中
@@ -498,10 +543,11 @@ const handleRegenerate = async (message) => {
             
             // 判断是否为最终答案
             if (json.success && json.answer !== undefined) {
-              message.finalAnswer = json.answer
-              message.question = json.question
-              scrollToBottom()
-              continue
+              // 调用格式化函数，空行+左对齐
+              message.finalAnswer = formatJsonWithBlankLine(json.answer);
+              message.question = json.question;
+              scrollToBottom();
+              continue;
             }
             
             // 将推理步骤添加到消息中
@@ -535,6 +581,19 @@ const toggleReasoning = (messageId) => {
   reasoningExpanded.value[messageId] = !reasoningExpanded.value[messageId]
   // 确保响应式更新
   reasoningExpanded.value = { ...reasoningExpanded.value }
+}
+
+// 处理点赞/反对反馈
+const handleFeedback = (message, type) => {
+  // 如果点击的是已选中的按钮，则取消选择
+  if (message.feedback === type) {
+    message.feedback = null
+  } else {
+    // 否则设置为对应的反馈类型
+    message.feedback = type
+  }
+  // TODO: 后续可以在此处添加发送反馈到后端的逻辑
+  console.log(`[Feedback] Message ${message.id}: ${type}`)
 }
 
 // 初始化
@@ -868,6 +927,7 @@ html, body, #app {
   color: rgb(23, 23, 23);
   box-shadow: 0 4px 6px rgba(102, 126, 234, 0.2);
   animation: fadeInAnswer 0.5s ease-out;
+  text-align: left;
 }
 
 @keyframes fadeInAnswer {
@@ -886,13 +946,17 @@ html, body, #app {
   font-weight: 600;
   margin-bottom: 0.75rem;
   opacity: 0.9;
+  text-align: center;
 }
 
 .answer-content {
-  font-size: 1rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap; /* 保留JSON的换行和空格缩进 */
+  word-break: break-all; /* 防止长字符串溢出 */
+  margin: 0; /* 清除pre标签默认的margin */
+  font-family: Consolas, Monaco, 'Courier New', monospace; /* 等宽字体，确保空格和字符宽度一致 */
+  text-align: left; /* 强制内容左对齐，覆盖父元素可能的居中样式 */
 }
 
 /* 重新生成按钮样式 */
@@ -900,6 +964,15 @@ html, body, #app {
   margin-top: 0.75rem;
   display: flex;
   justify-content: flex-start;
+}
+
+/* 操作按钮容器 */
+.action-buttons {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .regenerate-btn {
@@ -926,6 +999,48 @@ html, body, #app {
 .regenerate-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 反馈按钮容器 */
+.feedback-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* 反馈按钮样式 */
+.feedback-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  background: #f8fafc;
+  color: #9ca3af;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.feedback-btn:hover:not(.active) {
+  background: #e2e8f0;
+  color: #6b7280;
+  border-color: #cbd5e1;
+}
+
+/* 选中状态：蓝色 */
+.feedback-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.feedback-btn.active:hover {
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 .message-time {

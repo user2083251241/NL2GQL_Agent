@@ -6,7 +6,7 @@ import json
 import os
 from langchain.tools import BaseTool
 from typing import Type, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from modules.database.client import HugeGraphDB
 from langchain_core.prompts import ChatPromptTemplate
 from modules.llm.client import get_llm
@@ -30,6 +30,12 @@ class StreamingCallbackHandler(BaseCallbackHandler):
         self._queue = queue.Queue()
         self._finished = False
         self._external_queue = step_queue  # 外部队列，用于实时推送
+        
+        # Token使用统计
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+        self.calls_count = 0
     
     def _push_step(self, step):
         """推送步骤到内部队列和外部队列"""
@@ -49,6 +55,23 @@ class StreamingCallbackHandler(BaseCallbackHandler):
     
     def on_llm_end(self, response, **kwargs) -> None:
         """当LLM生成结束时触发"""
+        # 提取token使用信息
+        try:
+            if hasattr(response, 'llm_output') and response.llm_output:
+                token_usage = response.llm_output.get('token_usage', {})
+                
+                if token_usage:
+                    prompt_tokens = token_usage.get('prompt_tokens', 0)
+                    completion_tokens = token_usage.get('completion_tokens', 0)
+                    total_tokens = token_usage.get('total_tokens', 0)
+                    
+                    self.prompt_tokens += prompt_tokens
+                    self.completion_tokens += completion_tokens
+                    self.total_tokens += total_tokens
+                    self.calls_count += 1
+        except Exception as e:
+            pass
+        
         # 提取LLM的完整输出
         if hasattr(response, 'generations') and response.generations:
             text = response.generations[0][0].text if response.generations[0] else ""
@@ -80,10 +103,19 @@ class StreamingCallbackHandler(BaseCallbackHandler):
     
     def on_agent_finish(self, finish, **kwargs):
         """当Agent执行完成时触发"""
+        # 构建最终答案事件，包含token使用信息
+        token_usage_data = {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "calls_count": self.calls_count
+        }
+        
         step = {
             "type": "final_answer",
             "content": finish.return_values.get("output", ""),
-            "timestamp": self._get_timestamp()
+            "timestamp": self._get_timestamp(),
+            "token_usage": token_usage_data
         }
         self._push_step(step)
     
@@ -118,6 +150,15 @@ class StreamingCallbackHandler(BaseCallbackHandler):
             return self._queue.get(timeout=timeout)
         except queue.Empty:
             return None
+    
+    def get_token_usage(self):
+        """获取token使用统计"""
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "calls_count": self.calls_count
+        }
     
     def _get_timestamp(self):
         """获取当前时间戳"""
@@ -247,6 +288,31 @@ class AnalyzeErrorInput(BaseModel):
     error_message: str = Field(
         description="Gremlin执行返回的错误信息"
     )
+    
+    @model_validator(mode='before')
+    @classmethod
+    def ensure_all_fields_present(cls, values):
+        """确保所有必需字段都存在，如果缺失则提供默认值"""
+        if not isinstance(values, dict):
+            # 如果输入不是字典，创建一个默认字典
+            return {
+                'original_question': str(values) if values else '未知问题',
+                'failed_gremlin': '未知查询',
+                'error_message': '未知错误'
+            }
+            
+        # 确保所有字段都存在
+        defaults = {
+            'original_question': '未知问题',
+            'failed_gremlin': '未知查询', 
+            'error_message': '未知错误'
+        }
+        
+        for field, default in defaults.items():
+            if field not in values or values[field] is None or values[field] == '':
+                values[field] = default
+                
+        return values
 
 
 # ==================== Execute Gremlin Tool ====================
@@ -429,7 +495,7 @@ class AnalyzeErrorTool(BaseTool):
         """初始化工具，注入数据库实例"""
         super().__init__(db=db)
     
-    def _run(self, original_question: str, failed_gremlin: str, error_message: str) -> str:
+    def _run(self, original_question: str = None, failed_gremlin: str = None, error_message: str = None, **kwargs) -> str:
         """
         分析错误并生成修正建议
         
@@ -437,10 +503,19 @@ class AnalyzeErrorTool(BaseTool):
             original_question: 用户的原始问题
             failed_gremlin: 执行失败的Gremlin查询
             error_message: 错误信息
+            **kwargs: 其他可能的参数（兼容不同调用方式）
             
         Returns:
             错误分析和修正建议
         """
+        # 如果通过kwargs传递参数（LangChain有时这样调用）
+        if original_question is None and 'original_question' in kwargs:
+            original_question = kwargs['original_question']
+        if failed_gremlin is None and 'failed_gremlin' in kwargs:
+            failed_gremlin = kwargs['failed_gremlin']
+        if error_message is None and 'error_message' in kwargs:
+            error_message = kwargs['error_message']
+        
         try:
             # 获取当前数据库Schema
             schema = self.db.get_schema()
@@ -503,9 +578,9 @@ class AnalyzeErrorTool(BaseTool):
         except Exception as e:
             return f"❌ 错误分析失败: {str(e)}"
     
-    async def _arun(self, original_question: str, failed_gremlin: str, error_message: str) -> str:
+    async def _arun(self, original_question: str = None, failed_gremlin: str = None, error_message: str = None, **kwargs) -> str:
         """异步执行（目前同步实现）"""
-        return self._run(original_question, failed_gremlin, error_message)
+        return self._run(original_question, failed_gremlin, error_message, **kwargs)
 
 
 # ==================== 工具工厂函数 ====================

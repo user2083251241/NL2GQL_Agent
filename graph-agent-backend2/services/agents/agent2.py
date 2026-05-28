@@ -5,7 +5,7 @@
 from typing import Dict, Any
 from langchain.agents import AgentExecutor, create_react_agent
 from modules.database.client import HugeGraphDB
-from modules.llm.client import ChatOpenAI
+from modules.llm.client import ChatOpenAI, TokenUsageCallbackHandler
 from .tools import create_tools
 from .prompts import create_react_agent_prompt
 
@@ -31,7 +31,7 @@ class GraphAgent:
             db: HugeGraph数据库实例
             enable_self_correction: 是否启用自我修正功能，默认为True
         """
-        self.llm = llm
+        self.base_llm = llm
         self.db = db
         self.enable_self_correction = enable_self_correction
         
@@ -43,19 +43,36 @@ class GraphAgent:
         
         #print(f"✅ GraphAgent 初始化成功 (自我修正: {'启用' if enable_self_correction else '禁用'})")
     
-    def _create_agent(self) -> AgentExecutor:
+    def _create_agent(self, callbacks=None) -> AgentExecutor:
         """
         创建ReAct Agent
         
+        Args:
+            callbacks: 回调处理器列表
+            
         Returns:
             AgentExecutor实例
         """
+        # 如果提供了callbacks，创建带callback的新LLM实例
+        if callbacks:
+            from modules.llm.client import create_llm
+            from config import Config
+            
+            llm_with_callbacks = create_llm(
+                model=Config.OPENAI_MODEL,
+                temperature=0.7,
+                max_tokens=2000,
+                callbacks=callbacks
+            )
+        else:
+            llm_with_callbacks = self.base_llm
+        
         # 使用prompts.py中定义的规范Prompt模板，传递自我修正开关
         prompt = create_react_agent_prompt(enable_self_correction=self.enable_self_correction)
         
         # 创建ReAct Agent
         agent = create_react_agent(
-            llm=self.llm,
+            llm=llm_with_callbacks,
             tools=self.tools,
             prompt=prompt
         )
@@ -68,8 +85,10 @@ class GraphAgent:
             tools=self.tools,
             verbose=True,
             max_iterations=max_iterations,
+            max_execution_time=300.0,  # 总执行时间限制300秒
             handle_parsing_errors=True,
-            early_stopping_method="generate"
+            early_stopping_method="force",  # 超时或达到最大迭代时返回固定提示
+            callbacks=callbacks  # 传递callbacks到AgentExecutor
         )
         
         return agent_executor
@@ -88,37 +107,51 @@ class GraphAgent:
                 "question": str,
                 "answer": str,
                 "error": str (可选),
-                "corrections_attempted": int (可选，尝试修正的次数)
+                "corrections_attempted": int (可选，尝试修正的次数),
+                "token_usage": dict (可选，token使用统计)
             }
         """
         print(f"\n🔍 处理查询: {question}")
         
+        # 创建token统计callback handler
+        token_callback = TokenUsageCallbackHandler()
+        
         try:
-            # 执行Agent
+            # 执行Agent（使用带callback的agent）
+            agent_executor_with_callbacks = self._create_agent(callbacks=[token_callback])
+            
             # Agent会根据需要自动调用get_schema_info工具获取数据库结构
             # 如果查询失败且启用了自我修正，Agent可以调用analyze_and_correct_error工具进行自我修正
-            result = self.agent_executor.invoke({
+            result = agent_executor_with_callbacks.invoke({
                 "input": question
             })
             
             # 提取最终答案
             answer = result.get("output", "未获取到答案")
             
+            # 获取token使用统计
+            token_usage = token_callback.get_usage_summary()
+            
             return {
                 "success": True,
                 "question": question,
-                "answer": answer
+                "answer": answer,
+                "token_usage": token_usage
             }
             
         except Exception as e:
             error_msg = str(e)
             print(f"❌ 查询失败: {error_msg}")
             
+            # 即使失败也返回token统计
+            token_usage = token_callback.get_usage_summary()
+            
             return {
                 "success": False,
                 "question": question,
                 "answer": None,
-                "error": error_msg
+                "error": error_msg,
+                "token_usage": token_usage
             }
     
     def get_schema(self) -> Dict[str, Any]:
